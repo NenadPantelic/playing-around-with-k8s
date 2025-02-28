@@ -95,6 +95,7 @@
 - Registry (repository)
   - public & private
 - Docker image layers
+
   - images are packed and stored as layers
   - let's say that we have two images:
     - A consisting of:
@@ -123,3 +124,39 @@
     - Linux Alpine 3.22.4 (60 MB)
     ***
     Total: 276 MB
+
+- `--restart always` if you want to start the Docker container automatically when the computer is (re)started
+- in YAML, the order of the defintions is not important
+- to manage multiple containers, we use orchestrators:
+  - Docker Swarm
+  - Apache Mesos
+  - Kubernetes
+
+## Kubernetes basics
+
+- manages multiple containers within one or more hosts
+- manages the availability
+  - starts the container automatically
+  - restarts the container when it crashes
+- a pod - contains one or more containers, but the commmon practice is to have one container per pod
+- Kubernetes cluster
+  - master node (control plane) - K8s management processes
+    - API server: front-end for K8s
+    - scheduler: watches pods that are unassigned to any worker node and assign those podes to free worker node
+    - ectd: key-value store that acts as K8s data storage
+    - controller manager: manages K8s processes (pods, services, nodes, replications)
+  - worker nodes - nodes with pods that have some responsibility/task (has more resources - CPU, memory and disk)
+    - kubelet: make sure the container on pod is running
+    - kube proxy: network & communication proxy
+    - container runtime: runtime (e.g. Docker)
+  - service - exposes a pod to outer world
+  - replication is easy with K8s
+  - K8s can monitor the load on pods and dynamically scale up/down the number of replicas based on the traffic load - Horizontal Pod Autoscaler
+- pods can be grouped logically to namespaces
+- pods can have labels
+- K8s have many types of volumes
+  - config map
+  - local
+  - secret
+  - cloud storage (Google persistent disk, Azure disk, AWS EBS volume)
+- K8s can allocated the same pod replicas to different worker nodes (they are reached via service)
