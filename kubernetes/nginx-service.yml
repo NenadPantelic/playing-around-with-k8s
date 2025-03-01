@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+
+# specification for deployment
+spec:
+  selector:
+    app: nginx
+
+  ports:
+    - protocol: TCP
+      # incoming traffic port
+      port: 80
+      # pod port where to proxy the traffic
+      targetPort: 8080

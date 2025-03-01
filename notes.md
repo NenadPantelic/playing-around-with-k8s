@@ -160,3 +160,37 @@
   - secret
   - cloud storage (Google persistent disk, Azure disk, AWS EBS volume)
 - K8s can allocated the same pod replicas to different worker nodes (they are reached via service)
+
+- K8s in cloud:
+  - Google: Google Kubernetes Engine (GKE)
+  - AWS: Elastic Kubernetes Service (EKS)
+  - Azure: Azure Kubernetes Service (AKS)
+- locally: minikube
+
+### Hello Kubernetes
+
+1. `kubectl create deployment my-nginx --image nginx:stable` - creates a deployment using Nginx image
+2. expose the deployment to outer world - `kubectl expose deployment my-nginx --type NodePort --port 80` -> on minikube an additional step is needed -> `minikube service my-nginx --url`. Use the given address to access Nginx.
+3. `kubectl api-resources` - list down all resources available in K8s
+4. `kubectl get` and `kubectl describe` requires a resource as a parameter, e.g.
+   - `kubectl get pod abc`
+   - `kubectl describe service xyz` or shorter `kubectl describe svc xyz`
+
+#### Minikube
+
+- `minikube start` - to start local K8s cluster (requires Docker as prerequisite)
+  - `minikube start --memory 8192 --cpus 2`
+- `minikube stop` - stops K8s, but doesn't delete resources
+- `minikube delete` - stops K8s and deletes all deployed resources
+- `minikube tunnel` - creates a network tunnel between K8s and host (able to access to local cluster from browser)
+- `minikube addons enable/disable` - enables/disables minikube addons
+- `minikube service <service-name>` - opens a service in browser
+
+#### Scaling pods
+
+- image: `timpamungkas/devops-blue:1.0.0`
+- `kubectl expose deployment my-devops-blue --type LoadBalancer --port 8111 --name my-devops-blue-lb` - creates a LoadBalancer service
+- we can also access the pod if we use the virtual IP that can be fetched with `kubectl describe service <service-name>`
+- even if we have multiple replica pods, all of them are access through one service endpoint; the load is dynamically distributed based on the number of available pods
+- `kubectl scale deployment my-devops-blue --replicas 3` - to scale deployment to use 3 pods
+- `kubectl get pod -o wide` - for a wide output that contains IP addresses
