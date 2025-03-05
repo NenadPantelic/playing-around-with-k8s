@@ -188,9 +188,240 @@
 
 #### Scaling pods
 
-- image: `timpamungkas/devops-blue:1.0.0`
+- image: `npantelic/devops-blue:1.0.0`
 - `kubectl expose deployment my-devops-blue --type LoadBalancer --port 8111 --name my-devops-blue-lb` - creates a LoadBalancer service
 - we can also access the pod if we use the virtual IP that can be fetched with `kubectl describe service <service-name>`
 - even if we have multiple replica pods, all of them are access through one service endpoint; the load is dynamically distributed based on the number of available pods
 - `kubectl scale deployment my-devops-blue --replicas 3` - to scale deployment to use 3 pods
 - `kubectl get pod -o wide` - for a wide output that contains IP addresses
+
+## Declarative Kubernetes
+
+### Declarative vs imperative
+
+- create/read/update/delete using `kubectl`
+  - **Imperative** approach
+- in reality, use **declarative** approach
+
+  - write Kubernetes configuration file
+  - apply the configuration file
+
+- imperative (procedural)
+  - how to make a capuccino procedurally?
+    1. prepare a cup for 500cc
+    2. boil 200cc of water
+    3. pour boiling water into a cup
+    4. pour 2 tablespoons of ground coffee into a cup
+    5. add 200cc of foam milk
+    6. pour milk into coffee
+    7. add liquid sugar if you like
+- imperative - the exact steps on how to do something (order may be important) -> HOW
+- imperative K8s -
+
+  1. create a deployment from the image `devops-blue:1.0.0`
+  2. create a service with type LoadBalancer to port 8111
+  3. scale pod to 3 replicas
+
+- declarative - use an automatic coffee machine and offload the knowledge on HOW TO EXACTLY MAKE, so you have to know WHAT to make, and not how
+- Declarative - WHAT to make, automate HOW
+
+- So imperative K8s - how to operate K8s deployment (a living person, a professional with K8s knowledge)
+- declarative K8s - what configartion is needed, K8s will automate the HOW part
+- K8s config file - YML/YAML format; YAML - consistent use of **n** spaces for indentation level
+- apply the file, leave the rest to K8s
+- using declarative approach is recommended
+
+- YAML config file declaration leverages K8s REST API (it uses that REST API behind the scene)
+- `kubectl explain <resource>` - to get the doc details about that resource. We can also use this command to explain the fields of a resource. E.g. `kubectl explain deployment.spec` or `kubectl explain deployment.spec.selector`
+
+- K8s configuration file (manifest)
+
+```
+apiVersion: ...
+kind: ...
+metadata:
+...
+spec:
+...
+status:
+...
+```
+
+- `apiVersion` - REST API version used
+- `kind` - object type specified in the manifest file
+  ---- these two values are fixed and we can get them from K8s API reference ----
+- `metadata` - contains the basic information about the object instance, like its name, version, owner of the object, creation date etc.
+  - fields in metadata are the same for all object types
+- `spec` (important) - part in which the target state of the object is declared/specified
+  - fields in spec section are different for different object types
+  - e.g. for pod it will declare pod's containers, ports, volumes and other info
+  - for service that could be service type, IP address spec etc.
+- `status` (important) - contains the current actual state of the object
+  - e.g. for pod this section contains the condition of the pod, the status of each of its containers, its virtual IP and other information that reveals what is happening to pod
+- some object do not contain `spec` and `status`, like event object because such object usually contain static data
+- `spec` is defined by the engineer - that is a desired state
+- `status` is the current state and that is not defined by an engineer, but monitored
+- `controller` is a K8s component that monitors the target state based on the spec section and reports the actual state, updating the status section
+- controller will then perform the necessary operations to achieve the target state
+- labels are the way to group resources; we can add as many as needed
+- there are some common labels that are usually used like `app.kubernetes.io/name`
+- `spec.selector.matchLabels` - the value of this label must match the label value in spec
+
+- applying the K8s configuration manifest: `kubectl apply -f <filename.yml>`
+- `kubectl get pod --show-labels` - get pods with labels output
+
+- Deployment - high level specification on what to deploy, we mostly work with this yaml object
+- Pod
+  - the actual application that runs
+  - pod specification is defined in yaml deployment
+- ReplicaSet
+  - internally created with the purpose to maintain the number of requested pods
+- **Update**: if we have a deployment up & running and we change something in the deployment definition and apply again the same config, controller will do the necessary changes to reach the desired state (terminates the existing pods and create new ones)
+- **Delete**: `kubectl delete -f <filename.yml>`
+- we can create multiple object in the same manifest file. Objects should be separated wih `---` (three dashes)
+- `kubectl get pod -n <namespace>` - get all pods belonging to a given namespace or in general `kubectl get <resource> -n <namespace>` for any resource type
+
+## Operating Kubernetes
+
+### Labels
+
+- used to identify K8s objects
+- one object can have multiple labels
+- one label can be used for multiple objects
+- use the label selector for select matching objects
+
+- Example:
+  - Pod 1
+    - image: devops-blue:1.0.0
+    - labels:
+      - devops-label-on-pod
+      - 1.0.0
+  - Pod 2
+    - image: devops-blue:2.0.0
+    - labels:
+      - devops-label-on-pod
+      - 1.0.1
+  - Service-v1 (9011)
+    - labels:
+      - devops-label-on-pod
+      - 1.0.0
+    - note: thus applicable to Pod 1
+  - Service-v2 (9012)
+    - labels:
+      - devops-label-on-pod
+      - 1.0.1
+    - note: thus applicable to Pod 2
+  - Service-v3 (9013)
+    - labels:
+      - devops-label-on-pod
+      - 2.0.0
+    - note: this service does not match any pod by labels
+  - Service-all (9014)
+    - labels:
+      - devops-label-on-pod
+    - note: this service expose both Pod 1 and Pod 2 since their labels match the label of the this service
+
+### Annotation
+
+- key-value pair like label used to annotate a Kubernetes resource
+- label vs annotation
+  - similar format: key-value
+  - label is intended for the internal K8s engine (e.g. to identify a pod)
+  - annotation is for human use or 3rd party application which is installed on the same K8s cluster
+- metadata section:
+
+```
+metadata:
+  ....
+  labels:
+    app.kubernetes.io/name: my-funny-app
+    app.kubernetes.io/version: 2.0.4
+  annotations:
+    prometheus.io/scrape: "true"
+    prometheus.io/port: "8113"
+    prometheus.io/path: /metrics/prometheus
+```
+
+- e.g. Prometheus can filter pod annotated with the expected annotations and use to them to index metrics data
+
+### Port forwarding
+
+- we sometimes need to access the pod directly
+- if we have a load balancer and multiple replicas that can be bothersome
+- we can open (forward) a pod application port by mapping the host port to it
+- `kubectl port-forward [pod-name] host-port:pod-port`
+
+### Healthcheck
+
+- let's say we have 3 replicas and a load balancer service
+- one of the pods crash
+- K8s will do:
+
+  1. redistribute traffic to 2 healthy pods
+  2. restart the crashed pod to achieve the replica set number
+  3. once the third pod is healthy, it will redistribute traffic to 3 nodes
+
+- How K8s does know when the pod is healthy?
+
+  - it periodically (e.g. one minute) runs a terminal command/http/tcp/grpc
+  - if the health check response is good, then a pod is "healthy"
+  - otherwise (check response exceeds the "not good" threshold), then a pod is marked as "not healthy"
+
+- Two states in the pod's life:
+  - readiness: pod is ready to accept the client request. K8s will only send the request to such pods
+    - redirect traffic to healthy pod
+    - a pod is ready when all its containers are ready
+  - liveness: when the pod is ready, K8s will check if the pod is still alive. If it is not, it will restart it.
+- Probes
+  - probe to gather state
+  - readiness/liveness probes
+  - startup probe: in (legacy) application which takes a long startup time
+- Example:
+  - devops-blue has:
+    - `/actuator/health/readiness`
+    - `/actuator/health/liveness`
+- use health check probe without any authentication (or supply the correct authentication credentials)
+
+- note about devops-blue headers:
+
+1. `K8s-App-Version`: application version (will be equal to Docker image tag)
+2. `K8s-App-Identifier`: application name (with random number) & virtual IP
+3. `K8s-Pod-Name`: pod name
+
+### Pod lifecycle
+
+- pod status:
+  1. **Running**
+  - all containers have been created
+  - at least one container is running
+  2. **Pending**
+  - still download the container image
+  - another option is that the pod cannot be scheduled to run due to resource constraints (e.g. not having enough memory)
+  3. **Succeeded**
+  - all containers within pod have have been terminated and will not be restarted
+- when using the deployment configuration, the pod restart policy is `Always` - the pod will always restart if it has crashed and thus pod should not get into this state 4. **Failed**
+  - all containers within a pod terminated
+  - at least one termination returned an error code
+  5. **Unknown**
+  - cannot determine the pod status
+  - cannot communicate with the worker node hosting the pod (network issue or the worker node is down)
+  6. **CrashLoopBackOff**
+  - error, pod keeps restarting
+  - e.g. due to deployment error or missing the runtime dependency
+  7. **ImagePullBackOff**
+  - Cannot pull an image (network problem, private repository)
+  - troubleshooting: `kubectl describe pod [pod-name]` and delete the pod since K8s will try to pull the image again and recreate it
+
+### Log
+
+- `kubectl logs <pod-name>` - list down all logs
+- `kubectl logs --select <selector-value>` - list down all logs of the pods matching the given selector
+
+## Kubernetes UI
+
+- When working with minikube
+  - `minikube addons list`
+  - `minikube dashboard` - to open a UI
+- every cloud provider has its own UI
+
+- an alternative tool: K8s Lens (k8slens.dev)
