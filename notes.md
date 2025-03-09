@@ -425,3 +425,170 @@ metadata:
 - every cloud provider has its own UI
 
 - an alternative tool: K8s Lens (k8slens.dev)
+
+## Volume
+
+- a pod can be destroyed (e.g. when we scale down or simply delete it); pod destroyed -> container destroyed -> data destroyed
+- how to have permanent data?
+  - use external service - database, object storage (S3), big data node...
+  - use Kubernetes volume
+- a volume is created outside of a pod
+- one volume can be mounted by multiple pods and one pod can mount multiple volumes
+- volumes can be:
+
+  - local - attached to a worker node. Accessibility of such volumes depends on the worker node availability
+  - dedicated - outside of a worker node; cloud disk (Google or AWS storage); Network file system (NFS)
+
+- Data privacy
+  - containers in the same pod cannot see each other's data
+  - the same container in different replica cannot see each other's data
+
+### Empty dir volume
+
+- shared data between the containers of a pod (you define which containers can use it)
+- this kind of volume is shared on pod's level (another replica cannot see data of another replica pod)
+- this volume is not permanent. When a pod is destroyed, it's gone
+- convenient for temporary data or application state
+
+- Problematic scenario with empty dir:
+  - an empty dir is defined and we have two pod replicas
+  - let's say that we an API that stores files and we have a load balancer in front of those pods
+  - since an empty dir volume is defined per pod, if an API stores file in one pod (its empty dir), the other pod
+    won't be able to see that
+
+### External volume
+
+- Kubernetes persistent volume
+- local, network or cloud disk
+- control plan also has some volume types
+  - configmap
+  - secret
+  - stored in etcd
+
+### Local volume
+
+- stored on a worker node (disk)
+- so, all pods of that worker node can see such volume; replica pods that live in different worker node cannot use it
+- if a pod is restarted or destroyed, the data is still there. But, if a worker node dies, the data is gone
+- NOTE: minikube does not support this, but Docker Desktop Kubernetes does
+- K8s makes sure that the pod will be provisioned at the same node with the local volume
+- it survives the pod restart
+- `nodeAffinity` - tells Kubernetes where to deploy something (on which node) by some selector criteria
+
+### External disk
+
+- on-prem network storage file server, cloud disk (GCP, AWS, Azure...)
+- this approach is resistant to container crash, pod crash, worker node crash
+- cons: additional maintenance (if we use an on-prem solution) and more expensive
+
+- Volume `accessModess`
+
+  - on persistent volume `spec.accessModes`:
+    1. `ReadWriteOnce` - read and write are allowed by only one pod at a time
+    2. `ReadOnlyMany` - multiple pods can perform read operations
+    3. `ReadWriteMany` - multiple pods can perform read and write operations
+
+- useful: `kubectl get pod -n <namespace> <pod-name> -o jsonpath='{.spec.containers[*].name}'`
+- upon executing `exec` with kubectl, add `-c` to explicitly state on which container the command should be applied
+
+### hostPath volume
+
+- minikube supports volume named `hostPath`
+- mounts the host filesystem into a pod
+- if we have a multi-node cluster and the pod is restarted for some reason and now lives on another node, then the new pod will not be able to
+  the old data
+- thus this type of volume works well on a single node cluster
+- Minikube is a virtual machine that runs on a laptop, so hostPath will use that virtual machine. To check the file we can go into the VM itself or use `minikube mount` -> `minikube mount <local-path>:<path-in-vm>`
+
+## Application configuration in Kubernetes
+
+### ConfigMap
+
+- we need to configure some application parameters
+  - URL
+  - database settings
+- we need a way to adjust the configuration without need to change the source code
+- environment variables can be used (in containers) and we can set them with K8s
+- the problem is that some parameters can be dynamically changed
+- we can use the configmap and pass it to K8s environment variables
+- how to change those parameters? Change the configmap, save it and restart the pod -> `kubectl edit configmap <configmap-name> -n <namespace>`
+- configmap is accessible by any container, any pod, any worker nodes in K8s cluster
+
+- Example
+  - let's create an HTML page
+  - color & text from configmap via env variables
+  - no code changes, just the configmap changes
+- check the content of a configmap - `kubectl get configmap <name> -o yaml`
+- when the configmap is change, we don't have to delete the deployment, we can rollout it -> `kubectl rollout restart deployment -n devops <deployment-name>` -> restart with zero downtime -> K8s will start up the new pod and keep the old one until the new one is ready. Then it will terminate the old pod and redirect traffic to new pod.
+
+- Creating ConfigMap
+
+  1. Declarative configmap file
+
+  - single file
+  - separate file
+
+  2. from terminal
+
+- Example: `kubectl create configmap configmap-file-single -n <namespace> --from-file=<configmap-source-file.yml>`
+- when passing multiple `from-file` parameter into on configmap, each filename will become one key at configmap and each file content as respective value
+- Example: `kubectl create configmap <configmap-name> -n <namespace> --from-file=<source-1> --from-file=<source-2> --from-file=<source-3>`
+- a simpler way to specify multiple files as configmap sources is to pack the files into a folder and specify the folder as an argument
+
+### Secret
+
+- like configmap, but the value is always base64-encoded
+- it's not actually secret, just not human-readable (which is a bit misleading)
+- Example:
+  - an HTML page
+  - color & some text from secret
+  - some text from configmap -> mix the use of secret and configmap
+- `kubectl get secret <secret-name> -n <namespace> -o (json or yaml)`
+- Creating secret from terminal:
+
+```
+kubectl create secret generic <name> -n <namespace> --from-literal <key1>=<value1> --from-literal key.literal.two=<value2>
+```
+
+- if the value of a secret is given in plaintext, K8s will encode it to base64
+- Example: `kubectl create secret generic secret-literal -n devops --from-literal key.literal.one="This is my secret value for the first key" --from-literal key.literal.two="While this is the secret value for second key"`
+
+- Creating secret from the input file
+
+```
+kubectl create secret generic secret-file-single -n devops --from-file=secret-source.yml
+```
+
+- Creating secret from multiple files:
+
+```
+kubectl create secret generic secret-file-multi -n devops --from-file=secret-source.json --from-file=secret-source.properties --from-file=secret-source.txt --from-file=secret-source.png
+```
+
+- a secret can be also created from a folder
+
+## Helm - Kubernetes package manager
+
+- Installs, configures, manages applications inside Kubernetes cluster
+- Helm has 3 vital components:
+
+1. Chart
+   - Helm package format
+   - contains and defines all K8s resources required to run an application
+2. Repository
+   - repository which purpose is to store & share charts
+   - public (stable) and self-hosted repositories
+3. Release
+   - running chart instance
+   - one release = one Helm chart instance
+   - Running on K8s cluster
+
+- Behind the scene, Helm is K8s application resource and application is container which is pulled down from Docker repository
+- https://artifacthub.io/
+- `helm repo list` - check added repos
+- `helm list` - check releases
+- `helm uninstall` - remove release
+
+- Exercise:
+  - `minikube addons disable ingress`
+  - TODO: complete
