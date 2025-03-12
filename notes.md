@@ -567,6 +567,78 @@ kubectl create secret generic secret-file-multi -n devops --from-file=secret-sou
 
 - a secret can be also created from a folder
 
+## Exposing Kubernetes pod
+
+### Service
+
+- service - exposes pod out of K8s world making it accessible
+- Service types:
+  - LoadBalancer - distributes traffic among pod replicas
+    - access to it by its external IP
+    - needs a dedicated IP assigned to load balancer (might incur costs on cloud)
+    - Load balancer can use the low number port including 80 (HTTP) or 443 (HTTPS)
+    - one load balancer can have multiple ports
+  - NodePort - exposes it out of K8s
+    - exposes pods via worker node IPs
+    - no need for a dedicated IP assigned to a node port
+    - NodePort range (default): 30000 - 32767 -> we can assign the port or let K8s automatically assign a free port in this range
+    - one NodePort can have only one port
+    - good for local development, not practical otherwise
+  - ClusterIP - exposes it only to K8s cluster (default type)
+    - only for internal access within the cluster
+    - client cannot connect to cluster IP service; can do by using kubectl proxy, but the URL will change
+    - meant only to expose service to its cluster, so only for debugging purposes
+- Example:
+  - two different pods ->
+    - devops-blue, port 8111
+    - devops-yellow, port 8112
+  - one deployment => one pod => one container
+  - 2 replicas
+- To open a random port through which we can access the node port - `minikube service -n <namespace> <service-name>  --url`
+- To access ClusterIP, we should open a kubectl proxy -> `kubectl proxy --port=8888`
+
+## Ingress controller
+
+- having many pods means many load balancers
+- that means many IP addresses that has to be reserved and paid (in case of cloud deployment), the DNS management
+- what if we can have only one IP exposed externally and maybe we can separate pod routes via URL path
+- that is `ingress controller` (ingress in K8s is a routing rule book)
+- it redirects traffic to services based on a set of rules, e.g. using path
+- the service behind can be of any type, but we can easily use ClusterIP services since ingress controller expose them to outer world
+- `Ingress`
+  - set of rules
+  - K8s object
+  - defined via configuration file (yml)
+- `Ingress controller`
+
+  - installed separately
+  - it is a load balancer, but more powerful one with a set of rules (defined in `Ingress`)
+  - Nginx, AWS, GCP... have their own ingress controller product
+
+- Routing by host
+  - sample: api.devops.com -> 10.142.56.202
+  - DNS translate domain name into raw IP
+  - cloud: Google Cloud DNS, AWS Route 53
+  - locally: host file DNS (`/etc/hosts`)
+  - maps the human-readable address to IP address
+  - HTTP request header: `Host`
+    - URL: `https://somewhere.someday.com`
+    - `Host` request header: `someday.com`
+  - `blue.devops.local`
+  - `yellow.devops.local`
+
+### Ingress over TLS
+
+- secure traffic using TLS/HTTPS
+- set TLS on Ingress
+- TLS certificate
+
+  - issued by CA
+  - self-signed (not trusted by most apps, so we should disable validation on local - browser, postman)
+  - tool to generate it - regery
+
+- `kubectl create secret tls api-devops-local-cert --key api-devops.local-privateKey.key --cert api-devops.local.crt`
+
 ## Helm - Kubernetes package manager
 
 - Installs, configures, manages applications inside Kubernetes cluster
