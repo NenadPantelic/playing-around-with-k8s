@@ -626,6 +626,7 @@ kubectl create secret generic secret-file-multi -n devops --from-file=secret-sou
     - `Host` request header: `someday.com`
   - `blue.devops.local`
   - `yellow.devops.local`
+- `minikube addons disable ingress`
 
 ### Ingress over TLS
 
@@ -663,4 +664,29 @@ kubectl create secret generic secret-file-multi -n devops --from-file=secret-sou
 
 - Exercise:
   - `minikube addons disable ingress`
-  - TODO: complete
+
+### Sealed secret
+
+- sometime there is a need to share the configuration to version control system (git)
+- configmap/secret is just a plain format, meaning if we leave the db password there, secret will leak
+- encrypt K8s secret
+- not a built-in feature
+  - example: bitnami sealed secret
+- K8s eventually saves the secret (unsealed, plain text value)
+- Example:
+
+  - `my-config-file.yml`
+    `animal: Turtle`
+  - `my-secret-file.yml` (local file, not in K8s)
+    - create secret using parameter `--dry-run` (not uploaded to K8s cluster)
+  - `my-sealed-secret-file.yml` (encrypted)
+    - create sealed secret using `kubeseal` utility
+    - save to be distributed (shared, version controlled...)
+    - can only be applied to K8s cluster with the matching secret controller
+
+- `helm upgrade --install sealed-secrets sealed-secrets --set-string fullnameOverride=sealed-secrets-controller --repo https://bitnami-labs.github.io/sealed-secrets --namespace kube-system`
+- install bitnami sealed secrets client
+- `kubectl create secret generic my-secret -n devops -o yaml --dry-run=client --from-file my-config-file.yml` -- dry run means that the file secret will be encrypted and displayed, but not stored in K8s cluster
+- fetch the public key cert and store it - `kubeseal --controller-name=sealed-secrets-controller --controller-namespace=kube-system --fetch-cert > mycert.pem`
+- seal the secret - `kubeseal -o yaml --cert mycert.pem < my-secret-file.yml > my-sealed-secret-file.yml`
+- the encrypted data is stored, but when we apply the secret, it will decrypted and stored in plain text
