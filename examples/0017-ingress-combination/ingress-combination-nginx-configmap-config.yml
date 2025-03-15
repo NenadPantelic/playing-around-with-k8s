@@ -1,0 +1,12 @@
+# https://kubernetes.github.io/ingress-nginx/user-guide/nginx-configuration/configmap/
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  # configuring nginx (from ingress-nginx namespace)
+  name: my-ingress-nginx-controller # must be the same as LoadBalancer name (kubectl get service -n ingress-nginx)
+  namespace: ingress-nginx # must be in the same namespace
+data:
+  # we use the configmaps (from ./ingress-combination-nginx-configmap-headers.yml)
+  proxy-set-headers: ingress-nginx/nginx-custom-request-headers # A on ingress-combination-nginx-configmap-headers.yml
+  add-headers: ingress-nginx/nginx-custom-response-headers # B pn ingress-combination-nginx-configmap-headers.yml

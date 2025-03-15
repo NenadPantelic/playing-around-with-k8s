@@ -690,3 +690,130 @@ kubectl create secret generic secret-file-multi -n devops --from-file=secret-sou
 - fetch the public key cert and store it - `kubeseal --controller-name=sealed-secrets-controller --controller-namespace=kube-system --fetch-cert > mycert.pem`
 - seal the secret - `kubeseal -o yaml --cert mycert.pem < my-secret-file.yml > my-sealed-secret-file.yml`
 - the encrypted data is stored, but when we apply the secret, it will decrypted and stored in plain text
+
+## Observability on Kubernetes
+
+### Resource monitoring with Metrics server
+
+- each pod requires resources (CPU, memory)
+- we can monitor the resource usage for every pod using the metrics server
+- cloud flavors usually comes as a built-in feature, while minikube has an addon
+- Instructions:
+
+  1. stop the minikube cluster - `minikube delete`
+  2. `minikube start --extra-config=kubelet.housekeeping-interval=10s` (a known issue on minikube at the moment)
+  3. `minikube addons enable metrics-server`
+
+- Demo:
+
+  - enable ingress: `minikube addons enable ingress`
+  - when it's ready, open a minikube tunnel - `minikube tunnel`
+
+- Commands:
+  - `kubectl top node` - monitors the node
+  - `kubectl top -n <namespace>` - monitors pods
+
+### Monitoring with Prometheus stack
+
+- vizualization and the historical resource usage
+- Prometheus & Grafana
+- `kube-prometheus-stack` (includes custom dashboard)
+- prerequisites: helm, ingress & metrics-server
+- may not work as it should with minikube
+
+```
+helm upgrade --install my-kube-prometheus-stack --repo https://prometheus-community.github.io/helm-charts kube-prometheus-stack --namespace monitoring --create-namespace --values values-monitoring.yaml
+```
+
+- Nginx + Prometheus + Grafana - monitor Nginx traffic with Grafana
+- reconfigure ingress-nginx: `helm upgrade ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx --values values-ingress-nginx.yml`
+- check the configuration `helm get values ingress-nginx --namespace ingress-nginx`
+- `helm upgrade my-kube-prometheus-stack kube-prometheus-stack --repo https://prometheus-community.github.io/helm-charts --namespace monitoring --values values-kube-prometheus.yml`
+
+## Ingress combination
+
+- Example
+
+  1. ingress controller (`https://api.devops.local/...`) with the global nginx configmap (add request and response header)
+  2. two pods
+     1. Ingress yellow at `/devops/yellow`
+        - Nginx yellow annotation -> redirects all traffic to google.com
+     2. Ingres blue at `/devops/blue`
+        - Nginx blue annotation -> Rate limit (30 request/minute) and HTTP Strict Transport Security (HSTS) header
+
+- `kubectl create secret tls api-devops-local-cert -n devops --key api-devops.local-privateKey.key --cert api-devops.local.crt`
+- `helm upgrade --install my-ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx --namespace ingress-nginx --create-namespace`
+
+- Helm release cannot be restarted, but under the hood, Helm creates a deployment which can be restarted
+- Nginx configmap is applied globally, while the annotations are applied only to a particular pod
+- Ingress is usually used as a main entry point; use Nginx ingress controller
+
+## Autoscaling & Stateful set
+
+### Horizontal autoscaling
+
+- K8s can create/remmove replica based on threshold (e.g. if CPU usage is over 500 millicores)
+- this feature is called Horizontal Pod Autoscaler (HPA)
+- prerequisite: metrics-server (to monitor the resource usage)
+- Example:
+  - let's have 1 to 3 replicas
+  - K8s will scale up/scale down based on the CPU metric - it will periodically query the metrics server
+  - when the resource usage is above the threshold, it will scale up and opposite, when it decreases below some point, it will scale down
+- HPA has a predefined default policy where we only need to set the threshold value
+- when the metric value goes above the threshold, K8s immediately scales up
+- when the metric value goes below the threshold, K8s waits a few minutes to be sure that that value is not a temporary thing beforing scaling down
+
+### StatefulSet
+
+- Deployment
+  - pod replica has a random suffix (`pod-jfa9-ua7s`, `pod-n27f-pl5m`)
+  - volume behavior vary (data even can be loss if a pod is recreated, empty dir)
+- Use case
+
+  - Pod with fixed naming -> predictable, fixed DNS
+  - Pod always uses the same volume
+  - Example: RabbitMQ or Elasticsearch cluster
+
+- StatefulSet
+  - configuration like Deployment
+  - can add a volume template
+  - pod name follows a template: pod-0, pod-1, pod-2
+    - naming is predictable and always starts from 0
+    - pod name is the same even after a restart
+    - when deleting, K8s first deletes pod with the highest index in name
+  - pod-0 will get volume-0, pod-1 will get volume-1 etc.
+  - deleting/scaling down will not delete the volume
+- Demo:
+
+  - microservices are rarely combined with the statefulset, since microservice usually refers to REST API, which is by nature stateless (every API request is independent)
+
+- Deployment vs StatefulSet
+
+  - Deployment:
+    1. random suffix in pod name
+    2. 1 volume, 1 volume claim for all pods
+    3. provisioned together
+  - StatefulSet:
+    1. index (0-based) suffix in pod name
+    2. 1 volume, 1 volume claim for each pod
+    3. provisioned from the lowest index
+
+- NOTE: when stating multiple arguments in `get` command, use `,` - `kubectl get pod,pvc,pv -n <namespace>`
+- standard storage class = dynamic storage provisioning -> a volume will be created when needed (minikube support)
+- headless service - a service doesn't even have a cluster IP -> used to provide the network identity for stateful pods
+- volume template - used to create a persistent volume claim
+- one replica, one volume. If we have three replicas and two volumes defined, standard dynamic storage will provide one more volume for the third replica
+
+- data is distributed among persistent volumes - we cannot retrieve the entire dataset from all volumes
+- Example:
+
+  - ingress controller
+  - 3 pods
+  - 3 volumes:
+    - volume-0 (100 data records, replicated) used by pod-0
+    - volume-1 (100 data records, replicated) used by pod-1
+    - volume-1 (100 data records, replicated) used by pod-2
+  - if two volumes fail, the one that is still alive will have the entire data set and newly written records will go there
+  - once they are back, the replication will happen and all records will be mirrored to recovered replicas
+
+- `helm upgrade --install my-rabbitmq --repo https://charts.bitnami.com/bitnami rabbitmq --namespace rabbitmq --create-namespace --values values-rabbitmq.yml`
