@@ -1,0 +1,27 @@
+---
+# Source: spring-boot-rest-api/templates/ingress.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: helm-yellow-01-spring-boot-rest-api
+  labels:
+    helm.sh/chart: spring-boot-rest-api-0.1.0
+    app.kubernetes.io/name: spring-boot-rest-api
+    app.kubernetes.io/instance: helm-yellow-01
+    app.kubernetes.io/version: "1.16.0"
+    app.kubernetes.io/managed-by: Helm
+  annotations:
+    nginx.ingress.kubernetes.io/limit-burst-multiplier: "1"
+    nginx.ingress.kubernetes.io/limit-rpm: "30"
+spec:
+  rules:
+    - host: "api.devops.local"
+      http:
+        paths:
+          - path: /devops/yellow
+            pathType: Prefix
+            backend:
+              service:
+                name: helm-yellow-01-spring-boot-rest-api
+                port:
+                  number: 80

@@ -955,3 +955,60 @@ securityContext:
 
 1. Create a namespace - `kubectl create namespace <namespace>`
 2. Create a secret - `kubectl create secret -n <namespace> docker-registry dockerhub-secret --docker-server=https://index.docker.io/v1` --docker-username=your-username --docker-password=your-password --docker-email=your-email@email.com`
+
+## Using and creating Helm charts
+
+- Helm chart
+
+  - generic template
+  - create templates for K8s - all parameters are generic as template values
+  - package the template as Helm chart
+  - on release we define value or use default value for those parameters
+  - install resource using a single command
+  - Helm charts are versioned, so they can be updated
+  - each application type has a different template, i.e.
+    - Python app has a different template from a Java app template
+    - Java application written in framework A will have a different template than the Java app written in framework B
+
+- `helm create my-chart` -> Helm will create several required files and folders
+
+```
+[folder] my-chart
+
+  [folder] templates
+
+    _helpers.tpl - internal helper file, no need to change it
+
+    deployment.yaml -> Kubernetes configuration template. Can be customized/added (e.g. with variables). Use Helm template language (based on Go) with the template variables. When running `helm install`, those variables are populated and K8s objects are created
+    hpa.yaml
+    ingress.yaml
+    serviceaccount.yaml
+
+  Chart.yaml - contains metaata for our Helm chart: name, description, version...
+  values.yaml - contains key-value pairs to be used as parameters in Helm release; can be overriden upon release creation. These kv pairs will be eventually used on yaml files under folder `templates`
+```
+
+- to create a Helm release and use a local folder
+
+#### Check the template file and injected values
+
+- go to folder where the chart is located (chart folder) - `helm-charts`
+- execute Helm installtion using a path to values file - `values-spring-boot.yml`
+- what if template/values file has a mistake
+- we can render template + values without creating a release -> `helm template`
+
+- Template command: `helm template helm-yellow-01 spring-boot-rest-api --namespace devops --create-namespace --values /home/nenad/Documents/Learning/kubernetes-istio-google-cloud/examples/kubernetes/024-helm-spring-boot-rest-api-01/values-spring-boot.yml`
+  - if we want to save the output files of this command
+  - add `--output-dir <output-dir-location->`
+
+#### Simulate/validate
+
+- The YAML structure may be correct, but executing the release on K8s may give some errors
+- we can execute a dry run - `kubectl apply --dry-run=client -f xxx.yml` (the argument file can be creat )
+- it simulates the installation without actually applying the config file
+
+#### Run the release
+
+- `helm list -n devops`
+- `helm upgrade --install helm-yellow-01 spring-boot-rest-api --namespace devops --create-namespace --values /home/nenad/Documents/Learning/kubernetes-istio-google-cloud/examples/kubernetes/024-helm-spring-boot-rest-api-01/values-spring-boot.yml`
+- `helm uninstall -n devops helm-yellow-01`
