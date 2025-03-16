@@ -817,3 +817,141 @@ helm upgrade --install my-kube-prometheus-stack --repo https://prometheus-commun
   - once they are back, the replication will happen and all records will be mirrored to recovered replicas
 
 - `helm upgrade --install my-rabbitmq --repo https://charts.bitnami.com/bitnami rabbitmq --namespace rabbitmq --create-namespace --values values-rabbitmq.yml`
+
+## Quota & Service account
+
+### Resource quota
+
+- each container can have resource quota
+  - resource: CPU, memory, storage
+- it is an optional config, but it is a good idea to have it to avoid resources being eaten up by a single app
+
+- Two types of quota:
+  1. request
+     - minimum resource required
+     - required for a pod to be alive
+  2. limit
+     - maximum resource allowed
+     - can use only up to a limit (no more than that)
+
+### Namespace quota
+
+- Virtual area which logically splits the entities within a cluster
+- pods (and accompanying resources) are logically groupped together to the same namespace
+- no fixed standard for the namespace naming
+  - environment (dev, test, production)
+  - project name
+  - team name
+- there are two built-in namespaces
+  - `default` -> created with the cluster
+  - `kube-system` -> pods relevant to K8s system itself
+- resource in namespace must be unique, meaning only one "hello-world" deployment in the namespace X
+  - we can have multiple deployments with the exact same name, but in different namespaces
+- resources can be limited on a namespace level
+  - hardware resources
+  - K8s resources (pod, configmap, pvc...)
+- To create a quota for resource use control we can create a `ResourceQuota` object
+- Namespace quota
+
+  - Hardware resources
+    | Configuration key | Meaning |
+    |--- |--- |
+    | `requests.cpu` | Sum of all `resources.requests.cpu` across all containers|
+    |`requests.memory` | Sum of all `resources.requests.memory` across all containers|
+    | `requests.storage`|Sum of all `resources.requests.storage` across all containers |
+    | `limits.cpu`|Sum of all `resources.limits.cpu` across all containers |
+    | `limits.memory`| Sum of all `resources.limits.memory` across all containers|
+    | `limits.storage`|Sum of all `resources.limits.storage` across all containers |
+
+  - Kubernetes resources
+    | Configuration key | Meaning |
+    |---|---|
+    |configmaps | Total number of `ConfigMap` in a namespace |
+    | persistentVolumeClaims | Total number of `PersistentVolumeClaim` in a namespace|
+    | pods |Total number of `Pod` in a namespace |
+    | replicationcontrollers | Total number of `ReplicationController` in a namespace|
+    |resourcequotas | Total number of `ResourceQuota` in a namespace|
+    | services | Total number of `Service` in a namespace|
+    | services.loadbalancer| Total number of `Service` of type `LoadBalancer` in a namespace|
+    | services.nodeports | Total number of `Service` of type `NodePort` in a namespace|
+    | secrets| Total number of `Secret` in a namespace |
+
+### Service account
+
+- There are two types of users/accounts in Kubernetes
+
+1. User account (human)
+   - use `kubectl`
+2. Service account (non-human)
+   - authenticate from a pod within a cluster
+   - service account is Kubernetes object
+   - mounted in a pod for communication
+   - specific per namespace
+   - each namespace has a default service account
+
+## Secure pod & repository
+
+### Security context
+
+- Least privilege principle
+  - users/applications should only have the necessary privileges to complete their tasks
+- Security context - defines privileges/permission for individual pods/containers
+- Add `securityContext` within a pod or container configuration (or both)
+- If `securityContext` defined on both, the one on container will take the priority
+- this possibility (of having a pod-level security context) is useful when having multiple containers in pod
+
+  - the default one can be defined on a pod level
+  - override on a container level
+
+- Security context example
+
+```
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 10000
+  runAsGroup: 10000
+  readOnlyRootFilesystem: true
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+```
+
+- `runAsNonRoot`
+  - set to true to enforce the use of non-root users for pod/container to limit the access to resources that might mistakenly get exposed to the container
+  - applicable to: pod/container
+- `runAsUser` and `runAsGroup`
+  - to enforce specific the specific runtime user and group
+  - these IDs must exist in the container image
+  - applicable to: pod/container
+- `readOnlyRootFilesystem`
+  - set to true whenever possible
+  - restricts the use of filesystem to read-only, which prevents the attacker to install malicious software of change configurations
+  - applicable to: container
+- `allowPrivilegeEscalation`
+  - when set to true, container will run in a privileged mode
+  - processes in privileged containers are essentially equivalent to root on the host
+  - the default value is **false** and it is not recommended to change it
+  - this config controls whether a process can gain more privileges that its parent process
+  - in most cases we should explicitly set value to false to prevent processes from attaining higher privileges, for example via sudo command
+  - applicable to: container
+- `capabilities`
+  - kernel level permissions that allow for more granular controls, which include system-wide administration functions
+  - K8s provides a way to drop or add capabilities
+  - drop all capabilities, then only add back the ones your application needs
+  - in many cases, applications don't really need any capabilities, so you can drop them all, test the application and if needed, add just the ones which are needed
+  - applicable to: container
+  - `procMount`
+    - don't change **procMount** from the default settings, unless you have a very specific requirement like nested containers
+    - applicable to: container
+  - `sysctls`
+    - don't change **sysctls** from the default settings, unless you have a very specific requirement
+    - can destabilize the host operating system
+    - applicable to: pod
+
+### Private repository
+
+- Steps for using a private docker repository:
+
+1. Create a namespace - `kubectl create namespace <namespace>`
+2. Create a secret - `kubectl create secret -n <namespace> docker-registry dockerhub-secret --docker-server=https://index.docker.io/v1` --docker-username=your-username --docker-password=your-password --docker-email=your-email@email.com`
