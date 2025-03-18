@@ -10,7 +10,7 @@ appVersion: "1.0.0"
 dependencies:
   - name: spring-boot-rest-api
     version: 0.1.0
-    repository: https://npantelic.github.io/devops-helm-charts/
+    repository: https://nenadpantelic.github.io/devops-helm-charts/
   - name: redis
     version: 17.0.1
     repository: https://charts.bitnami.com/bitnami

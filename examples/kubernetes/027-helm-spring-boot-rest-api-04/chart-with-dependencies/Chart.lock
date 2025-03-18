@@ -1,0 +1,9 @@
+dependencies:
+- name: spring-boot-rest-api
+  repository: https://nenadpantelic.github.io/devops-helm-charts/
+  version: 0.1.0
+- name: redis
+  repository: https://charts.bitnami.com/bitnami
+  version: 17.0.1
+digest: sha256:a3633790de480259d5b7dcf30268edaac07f18b3e551c8331f15ba9994b232a1
+generated: "2025-03-18T20:03:01.981260234+01:00"

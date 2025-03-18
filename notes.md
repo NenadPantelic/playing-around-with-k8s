@@ -1012,3 +1012,59 @@ securityContext:
 - `helm list -n devops`
 - `helm upgrade --install helm-yellow-01 spring-boot-rest-api --namespace devops --create-namespace --values /home/nenad/Documents/Learning/kubernetes-istio-google-cloud/examples/kubernetes/024-helm-spring-boot-rest-api-01/values-spring-boot.yml`
 - `helm uninstall -n devops helm-yellow-01`
+
+### Template syntax
+
+![](images/helm_template_syntax_1.png)<br>
+![](images/helm_template_syntax_2.png)<br>
+![](images/helm_template_syntax_3.png)<br>
+
+### Chartmuseum
+
+- we can (re)use charts using Helm chart repository
+- we can use the cloud storage (AWS S3, GCP)
+- we can also use the chartmuseum
+  - can use various storages (local, cloud)
+- `helm install my-chartmuseum --namespace chartmuseum -f values-chartmuseum.yml chartmuseum/chartmuseum`
+- Navigate to folder where the chart is and run `helm package spring-boot-rest-api`. This will create a tar file.
+- we can upload a tgz file to chartmuseum using an API
+
+```
+curl --location 'http://chartmuseum.local:8080/chartmuseum/api/charts' \
+--header 'Content-Type: application/octet-stream' \
+--header 'Authorization: Basic Y2hhcnRtdXNldW06cGFzc3dvcmQ=' \
+--data-binary '@filepath/spring-boot-rest-api-0.1.0.tgz'
+```
+
+- now we can use that chart - `helm upgrade --install helm-yellow-02 spring-boot-rest-api --repo http://chartmuseum.local:8080/chartmuseum --username chartmuseum --password password --namespace devops --create-namespace --values values-spring-boot.yml --version 0.1.0`
+
+### Multiple configurations
+
+- we can use multiple-value file:
+
+  - one for the general release (values.yml)
+  - one for each environment (`values-dev.yml`, `values-test.yml`, `values-prod.yml`)
+  - pass multiple files on release
+
+- `helm upgrade --install helm-blue-03 spring-boot-rest-api --repo http://chartmuseum.local:8080/chartmuseum --username chartmuseum --password password --namespace devops --create-namespace --version 0.1.0 --values values.yml --values values-dev.yml`
+- if there is the same key in multiple values, the last given file has the priority
+
+### GitHub as Helm Chart repository
+
+- use public or private repository
+
+### Multiple Helm charts
+
+- we might need multiple charts as a single unit
+- image we have a service S that requires services A and B and Redis
+- S should run on K8s using Helm
+- Create a Helm chart for S
+  - it will not have any K8s objects
+  - instead, it will declare dependencies to A, B and Redis
+  - S will then override Helm chart values (with values files)
+- S will contain the `Chart.yaml` file, but no object templates
+- we can create only `Chart.yaml` without using Helm
+
+- Demo:
+  - go to `helm-spring-boot-rest-api-04/chart-with-dependencies` and run `helm dependency update` (will download charts as tgz files)
+  - `helm upgrade --install helm-blue-04 chart-with-dependencies --namespace devops --create-namespace --values values.yml --values values-dev.yml` (install charts)
