@@ -1,0 +1,12 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: my-argocd-repo-creds
+  namespace: argocd
+  labels:
+    argocd.argoproj.io/secret-type: repo-creds
+stringData:
+  type: git
+  url: https://github.com/NenadPantelic/devops-app-deployment
+  username: NenadPantelic
+  password: <<<GH_PAT>>>

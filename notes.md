@@ -1068,3 +1068,84 @@ curl --location 'http://chartmuseum.local:8080/chartmuseum/api/charts' \
 - Demo:
   - go to `helm-spring-boot-rest-api-04/chart-with-dependencies` and run `helm dependency update` (will download charts as tgz files)
   - `helm upgrade --install helm-blue-04 chart-with-dependencies --namespace devops --create-namespace --values values.yml --values values-dev.yml` (install charts)
+
+## GitOps
+
+- at some point there is need for transition between the engineering and devops team - when the deliverable is released
+- build + push of a Docker image can be automated -> CI pipeline (Continuous integration)
+- automatic deployment -> CD (Continuous deployment/delivery)
+
+- GitOps
+
+  - an engineering team updates an image & predefined values and pushes the changes
+  - once chart & values are on GitHub, the devops team takes care of pulling the updated values and deploy these to K8s via Helm
+
+- Development procedure
+
+  1. an engineer has a task
+  2. he/she creates a git branch - `feature`
+  3. makes some commits and pushes them to `feature` branch
+  4. creates a pull request to `main` branch
+     --- CI pipeline runs ----
+     Lints (formats) the source code
+     Compiles
+     Do static code analysis
+     Do security scan
+     Checks the code quality gate
+     Runs unit tests
+     ***
+  5. Code review & discussion
+  6. Merged to master
+     --- CD pipeline runs ---
+     Builds a Docker image
+     Pushes it to repository
+     Deploy the container on a server (Docker or K8s)
+
+- GitHub repository
+  - CI pipeline runs here
+  - CD pipeline runs here
+  - CD pipeline does not deploy images to the server
+  - CD pipeline updates metadata in the application deployment repo
+- GitOps
+  - monitors the repo - if it changes, that's a new target state. The idea is to transform the K8s cluster from an actual state to target state
+  - Synchronize any change to K8s cluster, using GH repo as a source of truth
+- GitOps = git PR + CI/CD + IaC (Infrastructure as code)
+- GitOps tool - ArgoCD
+- `minikube start --memory 5000 --cpus 2`
+
+- `helm upgrade --install my-argocd argo-cd --repo https://argoproj.github.io/argo-helm --namespace argocd --create-namespace --values values-argocd.yml`
+- Credentials: admin/password
+- `values-xxx.yml`
+  - separate per environment, keep the structure
+  - `xxx` is environment (`values-dev.yml`, `values-test.yml`, `values-prod.yml`)
+  - the same key can have different value (e.g. database url, username/password, API key,...)
+  - generic values can be put to `values.yml`
+- what if someone deletes the object monitored by ArgoCD?
+  - that means that the desired is not the same as the actual one
+  - the same goes if some config parameter is changed
+  - ArgoCD will synchronize and make the cluster go to the desired state
+  - if an automatic sync feature is turned off, then it will do nothing since it will not automatically synchrnoize the state (it can be manually synchronized)
+
+### Kubernetes CRD (Custom Resource Definition)
+
+- built-in K8s object definition (deployment, pod, ingress...)
+- application might need to use resources for the custom requirement
+- use CRD (Custom Resource Definition)
+
+- ArgoCD and sensitive data
+  - `helm create sealed-secret`
+  - `kubeseal --controller-name=sealed-secrets-controller --controller-namespace=kube-system --fetch-cert > mycert.pem` (need a sealed-secrets Helm chart for this)
+- if we change a secret, ArgoCD will update Helm for sealed secret, but that will not be treatened as an application change, therefore an application will not be synchronized and it has to be manually restarted
+- a solution is to use a tool called `reloader`
+
+### Reloader
+
+- reloader will monitor changes in configmap and sealed secrets and will update the deployment/pods (restart them when the changes are detected)
+- simple case
+  - configmap & sealed secret
+- `helm upgrade --install my-reloader reloader --repo https://stakater.github.io/stakater-charts --namespace reloader --create-namespace`
+- Seal a secret: `kubeseal --controller-name=sealed-secrets-controller --controller-namespace=kube-system --fetch-cert > mycert.pem`
+- `kubeseal --cert mycert.pem -o yaml < devops-reloader-secret-plain.yml > devops-reloader-secret-sealed.yml`
+- Apply the sealed secret and configmap
+  - `kubectl apply -f devops-reloader-secret-sealed.yml`
+  - `kubectl apply -f devops-reloader-configmap.yml`
