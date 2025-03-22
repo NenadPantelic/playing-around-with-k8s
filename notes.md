@@ -1149,3 +1149,168 @@ curl --location 'http://chartmuseum.local:8080/chartmuseum/api/charts' \
 - Apply the sealed secret and configmap
   - `kubectl apply -f devops-reloader-secret-sealed.yml`
   - `kubectl apply -f devops-reloader-configmap.yml`
+
+## Managing certificates on K8s
+
+### Cert manager
+
+- secure HTTP using TLS (HTTPS protocol)
+- K8s cert manager
+  - adds certificate & certificate issuer to K8s
+  - simplify the TLS usage & renewal
+  - various issuers supported (e.g Let's encrypt)
+  - ensures the certificate validity
+  - renews certificates before they expire
+- does not have any vital effect to local K8s cluster - everything is in localhost
+- it requires a registered domain for certificate validation
+- Install cert manager: `helm upgrade --install cert-manager cert-manager --repo https://charts.jetstack.io --namespace cert-manager --create-namespace --set installCRDs="true"`
+- Cert Manager CRD
+
+  - provides CRD (Custom Resource Definition)
+  - **Issuer**
+    - how cert manager requests the TLS certificate
+    - specific for a namespace
+    - ensure that the `Issuer` is in the same namespace as TLS certificate
+  - **ClusterIssuer**
+    - cluster-wide version of `Issuer`
+    - one setup for all namespaces
+  - `Certificate`
+    - defails of TLS to be requested
+    - refer an `Issuer`/`ClusterIssuer`
+
+- ACME protocol (Automated Certificate Management Environment)
+  - protocol to automate the certificate lifecycle - issuance and renewal
+  - free to use
+  - little time to configure
+  - Let's Encrypt as ACME
+  - ACME entity has to validate that we own the domain, so if the domain is not reachable over the Internet (not a public domain), cert will not be deployed successfully
+  - generally, cert manager creates a token and exposes it, so it can be validated by ACME
+  - still, the certificate will be issued (will have an invalid mark on browsers)
+
+## Istio Service Mesh for East-West traffic
+
+### East-West traffic
+
+- North-south traffic: client outside the cluster and K8s cluster (client <-> ingress <-> service(pod))
+- East-west traffic:
+  - sometimes one K8s service (pod) has to call another service (pod)
+  - client <-> ingress <-> service A <-> ingress <-> service B
+  - an alternative, why would not service A call directly service B without going through an ingress object, i.e.
+    - client <-> ingress <-> service A <-> service B; this is called the east-west traffic
+  - the question is which address calls service A when reaching service B?
+    - each service is assigned an IP address
+    - each service is also assigned a domain - `service-name.namespace.svc.cluster.local`
+- Example:
+  - 3 services: blue, yellow and white
+  - main entry (north-south via ingress): blue
+  - API chain calls:
+    - `/api/chain/{response-status-code}/one` -> blue calls yellow
+    - `/api/chain/{response-status-code}/two` -> blue calls yellow and blue calls white
+    - `/api/chain/{response-status-code}/three` -> blue calls yellow and yellow calls white
+    - `/api/chain/{response-status-code}/four` -> one-level call
+    - `/api/chain/{response-status-code}/one` -> two-level call
+
+#### Automatic service DNS:
+
+- service:
+  - name: `devops-yellow-svc`
+  - port: 8112
+  - namespace: devops
+
+| Recognized DNS                                    | caller (blue) in the same namespace | caller (blue) not in the same namespace |
+| ------------------------------------------------- | ----------------------------------- | --------------------------------------- |
+| `devops-yellow-svc.devops.svc.cluster.local:8112` | ✔️                                  | ✔️                                      |
+| `devops-yellow-svc.devops.svc:8112`               | ✔️                                  | ✔️                                      |
+| `devops-yellow-svc.devops:8112`                   | ✔️                                  | ✔️                                      |
+| `devops-yellow-svc:8112`                          | ✔️                                  | ❌                                      |
+
+- service:
+  - name: `devops-white-svc`
+  - port: 8113
+  - namespace: devops
+
+| Recognized DNS                                   | caller (blue/yellow) in the same namespace | caller (blue/yellow) not in the same namespace |
+| ------------------------------------------------ | ------------------------------------------ | ---------------------------------------------- |
+| `devops-white-svc.devops.svc.cluster.local:8113` | ✔️                                         | ✔️                                             |
+| `devops-white-svc.devops.svc:8113`               | ✔️                                         | ✔️                                             |
+| `devops-white-svc.devops:8113`                   | ✔️                                         | ✔️                                             |
+| `devops-white-svc:8113`                          | ✔️                                         | ❌                                             |
+
+### GKE
+
+- `gcloud auth login` - to login with gcloud CLI
+
+#### Observability and control
+
+- one failure in the east-west traffic can cause an error to the entire east-west call chain (cascading failure)
+- what if we have a problem with a particular service
+  - a problem that cannot be fixed or a security hole
+  - we should disconnect it
+  - disconnecting it may not be easy - e.g. we have communication from node P to node Q and we want to close that traffic in east-west traffic, but leave open the north-south traffic calls to Q
+- Tools:
+  1. kube-prometheus stack - `helm upgrade --install kube-prometheus-stack --repo https://prometheus-community.github.io/helm-charts kube-prometheus-stack --namespace istio-system --create-namespace --values values-kube-prometheus.yml`
+  2. nginx ingress controller - `helm upgrade --install ingress-nginx ingress-nginx --repo https://kubernetes.github.io/ingress-nginx --namespace ingress-nginx --create-namespace --values values-ingress-nginx.yml`
+  3. istio base (CRD) and istio deamon (istiod)
+  4. enabling sidecar injection
+  5. Kiali as Istio UI
+  6. Jaeger as distributed tracing UI
+
+### Istio Service Mesh
+
+- ingress traffic (north-south): clients to our data center; managed by ingress controller
+- egress traffic: our data center to external APIs/resources
+- internal traffic (east-west): communication between resources/services within a cluster/data center; use service mesh
+
+- East-west problem
+  - no HTTPs when services communicate between each other
+  - no retry/failover when service calls fail
+  - no metrics, no visibilty over the communication quality
+  - no access control, all services can communicate between each other
+  - simple routing (e.g. round robin). If we have 3 instances of service B, calls to service B will be routed in a simple way
+  - these functionalities can be added to each service, but that will make some effort to an engineering team
+- `Service mesh` to the rescue
+- the idea is to route all calls through the service mesh rather than directly calling the service/pod
+- Mesh can intercept the traffic and add some logic (encryption, retry, timeouts, metrics, logs...)
+- Instead of `service A <-> service B`, we have `service A <-> mesh <-> service B`
+- Mesh logic is pluggable, no coding needed
+
+- Service mesh abilities:
+  - observe & monitor the communication
+  - secure connection
+  - circuit breaker
+  - traffic management/routing (service A v1 calls service B v2 etc.)
+  - enables A/B testing or canary deployment
+- No code change is needed, Istio helps with that by using sidecar proxy approach
+- pods will have the service container + sidecar proxy container
+- traffic between microservices will then go through each microservice's sidecar proxy, instead of direct communication between microservices (pod service applications). So, we can gather metrics, because proxy containers are intercepting traffic on both sides;
+  - instead of `service A -> service B` we will have `service A -> sidecar proxy A -> sidecar proxy B -> service B`
+- Istio is using `envoy` as sidecar
+- all sidecar proxy containers make the service mesh **data plane**
+- another part is the **control plane** which provides logic and config for the sidecar proxy
+- control plane is using `istiod` (Istio deamon)
+- Installation:
+  - Istio base (CRD):
+    ```
+    helm repo add istio https://istio-release.storage.googleapis.com/charts
+    helm repo update
+    helm upgrade --install istio-base istio/base --namespace istio-system --create-namespace
+    ```
+  - Istio daemon - `helm upgrade --install istiod istio/istiod --namespace istio-system`
+- built-in Istio provides port 15090 where Istio metric can be retrieved
+
+### Enabling sidecar injection
+
+- add a label to a namespace where we want to enable the sidecar proxy
+- it should be done once for each namespace
+- add this label - `istio-injection: enabled`
+- **NOTE:** sidecar injection will work only for pods created after the sidecar proxy enablement
+- to get the sidecar proxy container in other pods, restart the deployment - `kubectl rollout restart deployment...`
+- prometheus path: `http://<kube-prometheus-stack-prometheus-cluster-ip/prometheus/graph`
+
+### Kiali
+
+- visualize Istio
+- gathers Istio data & visualize it as graph (connection between nodes, traffic flow...)
+- Kiali allows also some config for Istio (includes the node disconnection), so access to it should be put behind the credentials; by default use the service account token to secure itself
+- Kiali takes data from Prometheus, so `PodMonitor` and `ServiceMonitor` must already be in running state to scrape data used by Kiali
+- Install Kiali: `helm upgrade --install kiali-server kiali-server --repo https://kiali.org/helm-charts --namespace istio-system --create-namespace --values values-kiali-server.yml`
