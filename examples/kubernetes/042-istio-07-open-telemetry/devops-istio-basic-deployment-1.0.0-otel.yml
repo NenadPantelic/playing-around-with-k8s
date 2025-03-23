@@ -10,21 +10,32 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-basic-deployment-blue
+  name: istio-otel-deployment-blue
 spec:
   selector:
     matchLabels:
-      app: istio-basic-blue
+      app: istio-otel-blue
   template:
     metadata:
       labels:
-        app: istio-basic-blue
-        version: 1.0.1
+        app: istio-otel-blue
+        version: 1.0.0
+      annotations:
+        # These 3 annotations are optional for gathering prometheus metrics
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8111"
+        prometheus.io/path: /devops/blue/actuator/prometheus
+        # Open telemetry sidecar
+        sidecar.opentelemetry.io/inject: "otel-sidecar"
+        instrumentation.opentelemetry.io/inject-java: "true"
     spec:
       containers:
         - name: devops-blue
-          image: npantelic/devops-blue:1.0.1
+          image: npantelic/devops-blue:1.0.0
           resources:
+            requests:
+              cpu: "0.02"
+              memory: 32Mi
             limits:
               cpu: "0.3"
               memory: 384Mi
@@ -57,8 +68,6 @@ spec:
             - name: DEVOPS_WHITE_URL
               # to local k8s cluster
               value: http://devops-white-clusterip.devops:8113/devops/white
-            - name: SPRING_ZIPKIN_BASE_URL
-              value: http://zipkin.istio-system:9411
   replicas: 1
 
 ---
@@ -66,21 +75,32 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-basic-deployment-yellow
+  name: istio-otel-deployment-yellow
 spec:
   selector:
     matchLabels:
-      app: istio-basic-yellow
+      app: istio-otel-yellow
   template:
     metadata:
       labels:
-        app: istio-basic-yellow
-        version: 1.0.1
+        app: istio-otel-yellow
+        version: 1.0.0
+      annotations:
+        # These 3 annotations are optional for gathering prometheus metrics
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8112"
+        prometheus.io/path: /devops/yellow/actuator/prometheus
+        # Open telemetry sidecar
+        sidecar.opentelemetry.io/inject: "otel-sidecar"
+        instrumentation.opentelemetry.io/inject-java: "true"
     spec:
       containers:
         - name: devops-yellow
-          image: npantelic/devops-yellow:1.0.1
+          image: npantelic/devops-yellow:1.0.0
           resources:
+            requests:
+              cpu: "0.02"
+              memory: 32Mi
             limits:
               cpu: "0.3"
               memory: 384Mi
@@ -110,8 +130,6 @@ spec:
             - name: DEVOPS_WHITE_URL
               # to local k8s cluster
               value: http://devops-white-clusterip.devops:8113/devops/white
-            - name: SPRING_ZIPKIN_BASE_URL
-              value: http://zipkin.istio-system:9411
   replicas: 1
 
 ---
@@ -119,21 +137,32 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-basic-deployment-white
+  name: istio-otel-deployment-white
 spec:
   selector:
     matchLabels:
-      app: istio-basic-white
+      app: istio-otel-white
   template:
     metadata:
       labels:
-        app: istio-basic-white
-        version: 1.0.1
+        app: istio-otel-white
+        version: 1.0.0
+      annotations:
+        # These 3 annotations are optional for gathering prometheus metrics
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8113"
+        prometheus.io/path: /devops/white/actuator/prometheus
+        # Open telemetry sidecar
+        sidecar.opentelemetry.io/inject: "otel-sidecar"
+        instrumentation.opentelemetry.io/inject-java: "true"
     spec:
       containers:
         - name: devops-white
-          image: npantelic/devops-white:1.0.1
+          image: timpamungkas/devops-white:1.0.0
           resources:
+            requests:
+              cpu: "0.02"
+              memory: 32Mi
             limits:
               cpu: "0.3"
               memory: 384Mi
@@ -159,9 +188,6 @@ spec:
             periodSeconds: 30
             timeoutSeconds: 5
             failureThreshold: 5
-          env:
-            - name: SPRING_ZIPKIN_BASE_URL
-              value: http://zipkin.istio-system:9411
   replicas: 1
 
 ---
@@ -171,12 +197,12 @@ metadata:
   namespace: devops
   name: devops-blue-clusterip
   labels:
-    app: istio-basic-blue
-    version: 1.0.1
+    app: istio-otel-blue
+    version: 1.0.0
 spec:
   selector:
-    app: istio-basic-blue
-    version: 1.0.1
+    app: istio-otel-blue
+    version: 1.0.0
   ports:
     - port: 8111
       name: http
@@ -188,12 +214,12 @@ metadata:
   namespace: devops
   name: devops-yellow-clusterip
   labels:
-    app: istio-basic-yellow
-    version: 1.0.1
+    app: istio-otel-yellow
+    version: 1.0.0
 spec:
   selector:
-    app: istio-basic-yellow
-    version: 1.0.1
+    app: istio-otel-yellow
+    version: 1.0.0
   ports:
     - port: 8112
       name: http
@@ -205,12 +231,12 @@ metadata:
   namespace: devops
   name: devops-white-clusterip
   labels:
-    app: istio-basic-white
-    version: 1.0.1
+    app: istio-otel-white
+    version: 1.0.0
 spec:
   selector:
-    app: istio-basic-white
-    version: 1.0.1
+    app: istio-otel-white
+    version: 1.0.0
   ports:
     - port: 8113
       name: http
@@ -220,9 +246,9 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   namespace: devops
-  name: ingress-istio-basic-nginx-blue
+  name: ingress-istio-otel-nginx-blue
   labels:
-    app.kubernetes.io/name: ingress-istio-basic-nginx-blue
+    app.kubernetes.io/name: ingress-istio-otel-nginx-blue
 spec:
   ingressClassName: nginx
   rules:
