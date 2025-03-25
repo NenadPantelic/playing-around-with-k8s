@@ -1403,3 +1403,220 @@ kubectl create -f https://github.com/jaegertracing/jaeger-operator/releases/down
 
 - These metrics are gathered and Istio exposes them at: port = 15020, URL = stats/prometheus
 - Secure Kiali server: `helm upgrade --install kiali-server kiali-server --repo https://kiali.org/helm-charts --namespace istio-system --create-namespace --values values-kiali-server-secure.yml`
+
+## Traffic management using Istio & Envoy proxy
+
+### Traffic routing
+
+- what if we have two versions of the same application - `1.0.0` and `1.0.1` running at the same time between the same service
+- routing rule can be:
+
+  - if a request contains `x-redirect-to` = `pod-white-1.0.1` header then we route the request to 1.0.1 version
+  - otherwise, the request should go to `1.0.0`
+
+- Istio traffic routing
+  - it uses `DestinationRule` & `VirtualService`
+  - these two are K8s objects
+  - we can use Kiali wizard to auto-generate YAML definitions and apply them; we can adjust those auto-generated definitions
+- For this configuration to work, we have to add:
+  - istio sidecar proxy to nginx pod
+  - certain annotations on the ingress
+- Istio objects
+
+  - `Gateway`: load balancer/ingress
+    - no need for it when we have nginx controller
+  - `VirtualService`: traffic routing rules, how the traffic will flow within the service mesh
+  - `DestinationRule`: policies to be applied to traffic
+
+- Imagine we have a situation where we are sending a package from Tokio to London
+  - the logistics company takes care of that
+    - an airport - `Gateway`
+    - routing directions (whether it goes to Liverpool, Manchester or London once it arrives to England) - `VirtualService`
+    - logistic policies (which type of transport to use, should they rotate vans used to deliver packages, the delivery protocol) - `DestinationRule`
+- these definitions are pushed to Envoy proxy
+
+### Load balancer
+
+- distributes traffic
+- LB algorithms:
+  - Round Robin (Simple)
+  - Least request/least connection - aims the pod replica which is least busy; it serves less number of clients
+  - Sticky load balancing (ConsistentHash) - the request will go to the same pod if the request value is the same. Supports hash by: HTTP header, cookie, source IP, query parameter
+
+### Canary release
+
+- releasing new features only to a subset of users
+- route x% traffic to old feature + y% traffic to new feature
+- x: 90%, y:10% (maybe a new feature is not stable yet)
+- how it gradually becomes more and more stable, we reduce the old feature traffic to 80%, 70%... and increase the y% towards 100%
+- Canary can be done without Istio
+  - we would have a single service and v1 pods (old feature) and v2 pods (new feature)
+  - e.g. if we want to route 25% to new feature, we would need 4 pods behind a service, 3 pods v1 and 1 v2 pod
+  - service would then apply the Round robin routing
+  - what if we want 10% of traffic to go to new feature pod v2 -> we would need 10 pods, 9 v1 and 1 v2 pod
+  - problems
+    - too many pods - provisioning idle pods just for Canary percentage
+    - low traffic means some pods are underutilized
+    - resource usage is too big
+- Istio needs only one pod of each version and by using the `VirtualService` and `DestinationRule` objects it splits the traffic as wanted
+- just tell it the percentage share and it will do it
+- Istio traffic distribution seen in Kiali may not be 100% precise, since it gets data from Prometheus and gathering/rendering them might face some delay
+
+### `VirtualService`
+
+- Kubernetes object
+- Example:
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: VirtualService
+metadata:
+  name: my-virtual-service # Name of the Istio VirtualService resource
+spec:
+  hosts:
+    - "example.com" # Host for which this VirtualService configuration applies
+  gateways:
+    - "my-gateway" # Gateway to associate with this VirtualService
+  http:
+    - route:
+        - destination:
+            host: "my-service" # Destination service for this route
+            subset: "v1" # Subset of the destination service
+          weight: 80 # Weight for this route (80%)
+        - destination:
+            host: "my-service" # Destination service for this route
+            subset: "v2" # Subset of the destination service
+          weight: 20 # Weight for this route (20%)
+```
+
+- K8s service and `VirtualService` are not the same thing
+- these are like partners; `VirtualService` is a partner whose task is to split traffic
+
+### `DestinationRule`
+
+- `VirtualService` defines **where** the traffic goes
+- `DestinationRule` defines **how** it goes there
+- these two can work together, but that is not a must -> `VirtualService` needs the `DestinationRule`, while the `DestinationRule` can work without the `VirtualService`
+
+- Example:
+
+```yaml
+apiVersion: networking.istio.io/v1alpha3
+kind: DestinationRule
+metadata:
+  name: my-destination-rule
+spec:
+  # Destination service for which this rule applies
+  host: my-service
+
+  subsets:
+    - name: v1 # Subset for the first route in the VirtualService
+      labels:
+        version: "v1"
+    - name: v2 # Subset for the second route in the VirtualService
+      labels:
+        version: "v2" #label must match the pod labels
+
+  trafficPolicy:
+    retries:
+      # Number of retry attempts
+      attempts: 3
+      # Timeout for each retry attempt
+      perTryTimeout: 2s
+
+    connectionPool:
+      tcp:
+        # Maximum number of TCP connections
+        maxConnections: 100
+        # Timeout for establishing a TCP connection
+        connectTimeout: 2s
+
+  outlierDetection:
+    # Number of consecutive errors before considering an instance as unhealthy
+    consecutiveErrors: 5
+    # Time interval between outlier detection checks
+    interval: 30s
+    # Minimum ejection duration for an unhealthy instance
+    baseEjectionTime: 60s
+    # Maximum percentage of unhealthy instances allowed
+    maxEjectionPercent: 30
+```
+
+### Dark launching
+
+- Canary is all about percentage
+- what if we want to rearrange the traffic distribution so that v2 API pod serves clients between the age 30-40
+- we cannot predict the percentage, nor we can apply such logic in plain Canary
+- if we know the user age (they have to log in); then we apply the dark launching logic
+  - instead of saying: "Hey Istio, please redirect 50% of traffic here, and 50% there" we can say
+  - redirect the traffic based on the `x-target-market` header - true to v2 API pod, false or not exist to v1 API pod
+  - we can set this header upon logging in
+  - the user is not aware that we are testing a new feature - that's why it's called the dark launch
+  - Istio supports using HTTP headers, URI, scheme, method, port, query parameters as the decision parameters in dark launch
+  - it also supports the TCP route criteria matching
+
+### Fallacies of Distributed system
+
+- one request can contain multiple east-west requests (microservice to microservice, call to database, cache, file storage...)
+- nodes can be distributed to many machines
+- the entire system must be reliable according to our SLA
+
+- Fallacies of distributed systems
+
+1. Network is always reliable
+   - network communication can fail (it can fail even without we know that)
+   - reasons: target server is down, internet provider failure, broken hardware, something else...
+   - application has to deal with this
+   - retry failures, e.g. transactional outbox pattern (store an attempt and retry unprocessed requests)
+2. Latency iz zero
+   - Latency is always there, even it is very small (1ms) or bih (n seconds/minutes)
+   - Latency = time needed for a service to send a request and get a response; well it's not zero
+   - related to the network speed & source-to-target distance
+   - we can use CDN (Content Delivery Network) to make the target closer to caller by storing a duplicate of data at the server which is part of CDN
+3. Bandwidth is infinite
+   - Bandwidth is limited and might be shared
+   - it is measured in bps (bits per second)
+   - it's like a pipe in which the water flows
+     - the same pipe might be shared between many water sources
+   - if we have a 1 gigabit/s bandwidth, that doesn't mean that our service can use the whole bandwidth, but the network admin can allocated 100 megabits/s to an application and rest is shared
+   - an example is a 1-hour video. Netflix does not send it all at once, because that could take 4 GB, but rather it sends it in smaller chunks - streaming
+4. The network is secure
+   - security hole might be there, from various source
+   - we might not know about those holes yet (ever)
+   - OS, library, application, hardware security holes
+   - use tools to scan CVE (Common Vulnerability Exposure) and fix it
+   - use encrypted communication (e.g. TLS)
+   - penetration testing team
+   - bug bounty
+   - maybe future technology can exploit, but not right now - we need a routine check
+5. Topology doesn't change
+   - nodes/applications in topology may be added, removed, changed
+   - the network structure can change - e.g. we add a firewall in front of an application, change the configuration, we remove a node...
+   - there is no an easy way to create a system completely resilient to this
+6. There is one administrator
+   - several administrators with the same privilege may cause conflicting, undocumented changes which can break the system
+   - usually on infrastructure - e.g. John allocated an IP range for a service, while Lisa allocated an IP range for service B which conflicts (intersect) with the one that John chose, these services can then behave unexpectedly
+   - these changes are not documented and it's hard to trace who did them -> we need a way to manage & document the infrastructure configuration
+   - we can use IaC (Infrastructure as code) for this purpose, e.g. Terraform (config file can be subject to code review); it also ensures that you provision and configure the same environment every time
+7. Transport cost is zero
+
+   - transporting data (both in and out) costs money
+   - in cloud the database is free, but the data costs money (data storage and transport)
+   - ingress cost (into our network) and egress (from our network)
+   - small cost per GB, but accumulated -> TBs or PBs
+   - be aware of network cost - e.g. a picture might sized down when sending data from a phone to server
+   - a JSON response will have the bigger data size compared to binary protobuf or avro, yet these two are less common in REST API responses and we have to satisfy the needs of our clients (if that's a public API)
+
+8. The network is homogeneous
+   - various network nodes, so make system that has high interoperability
+   - e.g. create applications that are platform independent (of a filesystem e.g. - windows vs linux)
+
+### Fault injection
+
+- use Istio to test some fallacies
+- purposely cause system to misbehave
+- application developer gets a simulation result from Istio and so he/she can improve an application resiliency
+- easily add/remove/configure failure from Istio
+- Examples:
+  - Network is reliable -> terminate a request without passing it to application (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout, 429 Too Many Requests)
+  - Latency is zero -> adding some delay to service response; high latency due to network issue, busy service, high I/O

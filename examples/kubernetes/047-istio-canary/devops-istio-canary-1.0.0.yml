@@ -11,15 +11,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-routing-deployment-blue
+  name: istio-canary-deployment-blue
 spec:
   selector:
     matchLabels:
-      app: istio-routing-blue
+      app: istio-canary-blue
   template:
     metadata:
       labels:
-        app: istio-routing-blue
+        app: istio-canary-blue
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -30,7 +30,7 @@ spec:
     spec:
       containers:
       - name: devops-blue
-        image: timpamungkas/devops-blue:1.0.0
+        image: npantelic/devops-blue:1.0.0
         resources:
           requests:
             cpu: "0.02"
@@ -73,15 +73,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-routing-deployment-yellow
+  name: istio-canary-deployment-yellow
 spec:
   selector:
     matchLabels:
-      app: istio-routing-yellow
+      app: istio-canary-yellow
   template:
     metadata:
       labels:
-        app: istio-routing-yellow
+        app: istio-canary-yellow
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -92,7 +92,7 @@ spec:
     spec:
       containers:
       - name: devops-yellow
-        image: timpamungkas/devops-yellow:1.0.0
+        image: npantelic/devops-yellow:1.0.0
         resources:
           requests:
             cpu: "0.02"
@@ -133,15 +133,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-routing-deployment-white
+  name: istio-canary-deployment-white
 spec:
   selector:
     matchLabels:
-      app: istio-routing-white
+      app: istio-canary-white
   template:
     metadata:
       labels:
-        app: istio-routing-white
+        app: istio-canary-white
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -152,7 +152,7 @@ spec:
     spec:
       containers:
       - name: devops-white
-        image: timpamungkas/devops-white:1.0.0
+        image: npantelic/devops-white:1.0.0
         resources:
           requests:
             cpu: "0.02"
