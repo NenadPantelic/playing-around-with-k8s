@@ -1620,3 +1620,149 @@ spec:
 - Examples:
   - Network is reliable -> terminate a request without passing it to application (502 Bad Gateway, 503 Service Unavailable, 504 Gateway Timeout, 429 Too Many Requests)
   - Latency is zero -> adding some delay to service response; high latency due to network issue, busy service, high I/O
+
+## Handling HTTP failures with Istion & Envoy proxy
+
+- HTTP timeout: define a timeout for calls (latency)
+- HTTP retry: retry several times if the first attempt has failed (network reliability); if all attempts are exhausted, stop retrying
+  - Java (resilience4j), Go (retryable-http)...
+  - drawback: it requires some coding in all microservices
+  - Istio to the rescue, no code changes
+    - retry can be defined on particular status codes
+    - the number of attempts and with per-try-timeout
+
+### Circuit breaker
+
+- interrupts the current flow in synchronous communication
+- if the certain threshold is reached, a circuit breaker is open and the target service/API is not available
+- try after some time and close the circuit if it passes
+- the idea is to let the target service/API recover, giving it some time for that
+- Example:
+  - let's say we have two pods - blue and yellow
+  - a blue pod can implement a circuit breaker logic with some indicators:
+    - HTTP status response 502/503/504
+    - if it receives any of these at least 100 times within 30 seconds
+  - in that case, it knows that yellow has a problem and it will temporarily suspend the connection to yellow
+  - e.g. it will suspend it for 2 minutes and after it, the communication will be possible again
+- Circuit breaker (in application code)
+  - add/change/deletion requires changes in the application code
+  - the implementation might become irrelevant, or abandoned in the future
+    - e.g. Hystrix (Java) was abandoned and no longer developed; so all projects which were using Hystrix if upgraded could have become incompatible with the last version of Hystrix
+    - current: resilience4j (Java), but for how long?
+- Circuit breaker (Istio & Envoy)
+  - Envoy provides the circuit breaker capability
+  - implemented in the sidecar proxy
+    - no need to change the application code
+    - add, configure or remove from Istio CRD
+    - update is part of an infrastructure upgrade
+    - more manageable compared with many individual microservice application updates
+- have to be careful when setting thresholds for the circuit breaker activation
+  - low threshold can cause frequent failures
+  - high threshold might never trigger the circuit breaker
+- in Istio it is part of `DestinationRule` and it's called `outlierDetection`
+  - `Ejection` - circuit breaker triggered, no traffic can flow
+
+```yaml
+kind: DestinationRule
+spec:
+  trafficPolicy:
+    outlierDetection:
+      baseEjectionTime: 10m # for how long the pipeline should be closed
+      consecutiveGatewayErrors: 10 # the number of consecutive 502/503/504 errors to trigger the circuit breaker
+      consecutive5xxErrors: 15 # the number of consecutive 5xx errors (any) to trigger the circuit breaker
+      interval: 5m # time window interval to watch/monitor the consecutive error
+```
+
+## Securing East-West traffic in K8s cluster
+
+### Mutual TLS (mTLS)
+
+- Istio security
+
+  1. Security by default - no changes needed in the application code & infrastructure
+  2. Defense in depth - integrate with the existing security systems to provide multiple layers of defense
+  3. Zero-trust network - build the secure solutions on untrusted network
+
+- Free Wifi trap
+  - an attacker set a network point - the free wifi and he/she sniffs the traffic = packet sniffing
+  - a victim visits an insecure website leaving details like password, credit card...
+  - the attacker uses a sniffing tool to sniff the network packets
+- use HTTPS
+  - get (buy) a certificate and install it
+  - issued by CA (Certificate Authority) - a trusted 3rd-party in the client-server relationship
+  - browser will onl trust certificates issued by CA
+  - with HTTPS even if the attacker sniffs the traffic, those packets will be useless as such data is encrypted
+- The north-south traffic should be protected with HTTPS and the east-west traffic should be protected with mTLS -> east-west traffci can happen between the pods on different nodes. Multiple zones (on cloud) are a simple example of such situation = we have the same pod deployed in different zones to support its redundancy and by that its resiliency.
+- two zones -> two locations
+- Network is not homogeneous
+
+  - cross-zone communication
+  - different floors of the same building
+  - two machines connected to the same hub
+
+- TLS (Transport Layer Security)
+  - encryption protocol based on public & private key
+  - encrypt using public key
+  - only matching private key can decrypt
+  - TLS certificate
+    - data file contains public key, issuer and expiration date
+- Certificaty Authority
+
+  - create "trusted" TLS certificate
+  - self-signed TLS certificate can be used, but marked as "untrusted"; expired certificates are also marked as "untrusted"
+  - TLS handshake
+    - the process of TLS certificate verification & matching the private (if the server possesses it)
+  - expires
+
+- Data exchange backed by TLS
+
+1. Client connects to server
+2. Server presents its TLS certificate
+3. Client verifies that certificate
+4. Data is exchanged over the encrypted TLS connection
+
+### mTLS
+
+1. Client connects to server
+2. Server presents its TLS certificate
+3. Client verifies that certificate
+
+---
+
+4. Client presents its TLS certificate
+5. Server verifies that certificate
+6. Data is exchanged over the encrypted TLS connection
+
+- Risk prevention by using mTLS
+  - Man in the Middle - an attacker is positioned between the client and the server intercepting the traffic
+  - spoofing - an attacker attempts to imitate a web server to a user or vice versa
+  - credential stuffing - an attacker tries to use a set of credentials taken in a data breach to try to log in as a legitimate user
+  - brute force - a trial-and-error appooach guess the right credentials
+  - phishing - steal the user credentials by tricking users to leave them on an insecure webpage
+  - malicious API requests
+- mTLS on K8s
+  - install certificates on each server
+  - mTLS works on a namespace level, not the node level
+- inter-pod communication is not protected
+- the communication between sidecar proxy containers is protected with mTLS
+
+#### Istio and mTLS
+
+- Istio has enabled mTS by default
+- it supports two TLS modes
+  - `PERMISSIVE`
+  - `STRICT`
+- Istio uses mTLS automatically whenever possible
+  - caller & receiver side both have sidecar proxy
+- if only one side has a sidecar proxy
+  - the mTLS cannot be used
+  - instead, the unencrypted data is sent -> if `PERMISSIVE` mode
+  - only encrypted traffic allowed -> `STRICT` mode
+- How does the `STRICT` mode behave? 👇
+
+| Source pod       | Target pod       | Allowed |
+| ---------------- | ---------------- | ------- |
+| Sidecar enabled  | Sidecar enabled  | YES     |
+| Sidecar enabled  | Sidecar disabled | YES     |
+| Sidecar disabled | Sidecar enabled  | NO      |
+| Sidecar disabled | Sidecar disabled | YES     |

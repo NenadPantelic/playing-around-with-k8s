@@ -10,15 +10,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-load-balancer-deployment-blue
+  name: istio-retry-deployment-blue
 spec:
   selector:
     matchLabels:
-      app: istio-load-balancer-blue
+      app: istio-retry-blue
   template:
     metadata:
       labels:
-        app: istio-load-balancer-blue
+        app: istio-retry-blue
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -64,22 +64,22 @@ spec:
               value: http://devops-yellow-clusterip.devops.svc.cluster.local:8112/devops/yellow
             - name: DEVOPS_WHITE_URL
               value: http://devops-white-clusterip.devops.svc.cluster.local:8113/devops/white
-  replicas: 3
+  replicas: 1
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-load-balancer-deployment-yellow
+  name: istio-retry-deployment-yellow
 spec:
   selector:
     matchLabels:
-      app: istio-load-balancer-yellow
+      app: istio-retry-yellow
   template:
     metadata:
       labels:
-        app: istio-load-balancer-yellow
+        app: istio-retry-yellow
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -130,15 +130,15 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   namespace: devops
-  name: istio-load-balancer-deployment-white
+  name: istio-retry-deployment-white
 spec:
   selector:
     matchLabels:
-      app: istio-load-balancer-white
+      app: istio-retry-white
   template:
     metadata:
       labels:
-        app: istio-load-balancer-white
+        app: istio-retry-white
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -188,10 +188,10 @@ metadata:
   namespace: devops
   name: devops-blue-clusterip
   labels:
-    app: istio-load-balancer-blue
+    app: istio-retry-blue
 spec:
   selector:
-    app: istio-load-balancer-blue
+    app: istio-retry-blue
   ports:
     - port: 8111
       name: http
@@ -203,10 +203,10 @@ metadata:
   namespace: devops
   name: devops-yellow-clusterip
   labels:
-    app: istio-load-balancer-yellow
+    app: istio-retry-yellow
 spec:
   selector:
-    app: istio-load-balancer-yellow
+    app: istio-retry-yellow
   ports:
     - port: 8112
       name: http
@@ -218,11 +218,10 @@ metadata:
   namespace: devops
   name: devops-white-clusterip
   labels:
-    # route to any white, so don't use version
-    app: istio-load-balancer-white
+    app: istio-retry-white
 spec:
   selector:
-    app: istio-load-balancer-white
+    app: istio-retry-white
   ports:
     - port: 8113
       name: http
@@ -232,9 +231,9 @@ apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   namespace: devops
-  name: ingress-istio-load-balancer-nginx-blue
+  name: ingress-istio-retry-nginx-blue
   labels:
-    app.kubernetes.io/name: ingress-istio-load-balancer-nginx-blue
+    app.kubernetes.io/name: ingress-istio-retry-nginx-blue
   # Need these annotations so istio can work with nginx
   annotations:
     nginx.ingress.kubernetes.io/service-upstream: "true"

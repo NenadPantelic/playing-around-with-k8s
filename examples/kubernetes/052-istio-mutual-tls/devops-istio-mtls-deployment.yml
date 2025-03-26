@@ -1,7 +1,31 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: devops
+  name: ingress-nginx
+  labels:
+    istio-injection: enabled
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-blue
+  labels:
+    istio-injection: enabled
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-yellow
+  labels:
+    istio-injection: enabled
+
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: devops-white
   labels:
     istio-injection: enabled
 
@@ -9,16 +33,16 @@ metadata:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: devops
-  name: istio-load-balancer-deployment-blue
+  namespace: devops-blue
+  name: istio-mtls-deployment-blue
 spec:
   selector:
     matchLabels:
-      app: istio-load-balancer-blue
+      app: istio-mtls-blue
   template:
     metadata:
       labels:
-        app: istio-load-balancer-blue
+        app: istio-mtls-blue
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -61,25 +85,25 @@ spec:
             failureThreshold: 5
           env:
             - name: DEVOPS_YELLOW_URL
-              value: http://devops-yellow-clusterip.devops.svc.cluster.local:8112/devops/yellow
+              value: http://devops-yellow-clusterip.devops-yellow.svc.cluster.local:8112/devops/yellow
             - name: DEVOPS_WHITE_URL
-              value: http://devops-white-clusterip.devops.svc.cluster.local:8113/devops/white
-  replicas: 3
+              value: http://devops-white-clusterip.devops-white.svc.cluster.local:8113/devops/white
+  replicas: 1
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: devops
-  name: istio-load-balancer-deployment-yellow
+  namespace: devops-yellow
+  name: istio-mtls-deployment-yellow
 spec:
   selector:
     matchLabels:
-      app: istio-load-balancer-yellow
+      app: istio-mtls-yellow
   template:
     metadata:
       labels:
-        app: istio-load-balancer-yellow
+        app: istio-mtls-yellow
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -122,23 +146,23 @@ spec:
             failureThreshold: 5
           env:
             - name: DEVOPS_WHITE_URL
-              value: http://devops-white-clusterip.devops.svc.cluster.local:8113/devops/white
+              value: http://devops-white-clusterip.devops-white.svc.cluster.local:8113/devops/white
   replicas: 1
 
 ---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  namespace: devops
-  name: istio-load-balancer-deployment-white
+  namespace: devops-white
+  name: istio-mtls-deployment-white
 spec:
   selector:
     matchLabels:
-      app: istio-load-balancer-white
+      app: istio-mtls-white
   template:
     metadata:
       labels:
-        app: istio-load-balancer-white
+        app: istio-mtls-white
         version: 1.0.0
       annotations:
         prometheus.io/scrape: "true"
@@ -185,13 +209,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  namespace: devops
+  namespace: devops-blue
   name: devops-blue-clusterip
   labels:
-    app: istio-load-balancer-blue
+    app: istio-mtls-blue
 spec:
   selector:
-    app: istio-load-balancer-blue
+    app: istio-mtls-blue
   ports:
     - port: 8111
       name: http
@@ -200,13 +224,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  namespace: devops
+  namespace: devops-yellow
   name: devops-yellow-clusterip
   labels:
-    app: istio-load-balancer-yellow
+    app: istio-mtls-yellow
 spec:
   selector:
-    app: istio-load-balancer-yellow
+    app: istio-mtls-yellow
   ports:
     - port: 8112
       name: http
@@ -215,14 +239,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  namespace: devops
+  namespace: devops-white
   name: devops-white-clusterip
   labels:
-    # route to any white, so don't use version
-    app: istio-load-balancer-white
+    app: istio-mtls-white
 spec:
   selector:
-    app: istio-load-balancer-white
+    app: istio-mtls-white
   ports:
     - port: 8113
       name: http
@@ -231,14 +254,14 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
-  namespace: devops
-  name: ingress-istio-load-balancer-nginx-blue
+  namespace: devops-blue
+  name: ingress-istio-mtls-nginx-blue
   labels:
-    app.kubernetes.io/name: ingress-istio-load-balancer-nginx-blue
+    app.kubernetes.io/name: ingress-istio-mtls-nginx-blue
   # Need these annotations so istio can work with nginx
   annotations:
     nginx.ingress.kubernetes.io/service-upstream: "true"
-    nginx.ingress.kubernetes.io/upstream-vhost: devops-blue-clusterip.devops.svc.cluster.local
+    nginx.ingress.kubernetes.io/upstream-vhost: devops-blue-clusterip.devops-blue.svc.cluster.local
 spec:
   ingressClassName: nginx
   rules:
