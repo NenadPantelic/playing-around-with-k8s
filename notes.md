@@ -1766,3 +1766,152 @@ spec:
 | Sidecar enabled  | Sidecar disabled | YES     |
 | Sidecar disabled | Sidecar enabled  | NO      |
 | Sidecar disabled | Sidecar disabled | YES     |
+
+## Choosing node for pod
+
+### Node selector
+
+- we can have a pool of worker nodes with different machine types
+- example:
+  - pool with high-memory machines
+  - pool with high-CPU machines
+  - pool with standard machines
+- How to deploy pod only to a certain pool, i.e. memory hungry pods only to high-memory machines?
+
+- The simplest way is to use `nodeSelector` on pod specification
+  - pod can only live on node which has a certain label
+  - Google node pools have labels: `cloud.google.com/gke-nodepool: YOUR-POOL-NAME`
+- If we have three pools:
+
+1. `pool-high-mem`
+2. `pool-standard`
+3. `pool-other`
+
+- if we want to deploy pods only to pool with high memory, use `nodeSelector: pool-high-mem`
+- if there is no matching node, the pod will not go up - strict requirement
+- limited, only based on labels, more complex criteria is not applicable
+
+### Node affinity
+
+- More complex criteria for node matching
+- on pod `spec.affinity.nodeAffinity`
+  - `requiredDuringSchedulingIgnoredDuringExecution`
+    - strict, no matching node, the deployment will fail
+    - similar to node selector, but supports more complex criteria matching
+  - `preferredDuringSchedulingIgnoredDuringExecution`
+    - less strict
+    - prefers deploying to node with matching criteria
+    - if no such node, deploy to any
+    - no effect on pod that is already running; pod has to be deleted & recreated for affinity to have effect
+- Affinity operators
+  - `pod-label-key: pod-label-value`; e.g. `cloud.google.com/gke-nodepool: pool-standard`
+  - operators:
+
+| Operator       | Match against | Description                                                            |
+| -------------- | ------------- | ---------------------------------------------------------------------- |
+| `In`           | `Value`       | Must match one of specified values (accepts list)                      |
+| `NotIn`        | `Value`       | Must NOT match one of specified values (accepts list)                  |
+| `Exists`       | `Key`         | Pod must include label with specified key. Value is not important.     |
+| `DoesNotExist` | `Key`         | Pod must NOT include label with specified key. Value is not important. |
+
+- if multiple conditions are defined, all expressions must evaluate to true
+- if we have both node selector and node affinity, both must match
+- Example:
+
+```yaml
+spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: label-one
+                operator: In
+                values:
+                  - highmem-node
+```
+
+- preferrence factor (weights) -> pick node by preference if possible (if the most desired group is not available, take the next one by preference)
+
+```yaml
+spec:
+  affinity:
+    nodeAffinity:
+      preferredDuringSchedulingIgnoredDuringExecution:
+        - preference:
+          - matchExpressions:
+              - key: label-one
+                operator: In
+                values:
+                  - highgpu-node
+        weight: 99
+        - preference:
+          - matchExpressions:
+              - key: label-one
+                operator: In
+                values:
+                  - standard-node
+        weight: 66
+        - preference:
+          - matchExpressions:
+              - key: label-one
+                operator: In
+                values:
+                  - highgpu-node
+        weight: 33
+```
+
+- preference can be also applied to anti-affinity (`NotIn` or `DoesNotExist`)
+- use cases:
+  - specific hardware requirements
+  - based on a team/project ownership
+
+### Inter-pod affinity
+
+- pod B must run on certain node based on pod A location
+  - application pod & cache pod must live at the same node to reduce the network latency
+- Inter-pod affinity and anti-affinity
+  - order certain pod where to live (not to live in case of anti-affinity) based on labels of oterh pod that is already running in a particular node
+  - applied to namespace
+  - `requiredDuringSchedulingIgnoredDuringExecution` and `preferredDuringSchedulingIgnoredDuringExecution`
+- `topologyKey`
+  - refers to node label
+  - pod B is scheduled/not scheduled on a node which has the same `topologyKey` on which the pod A is running
+- Example:
+  - pod `app: my-app` and `app: my-redis` should run on the same node
+  - redis pod affinity can be:
+
+```yaml
+spec:
+  affinity:
+    podAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+          - matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - my-app
+        topologyKey: kubernetes.io/hostname
+```
+
+- affinity can be misled when using multiple replicas; e.g. n app replicas and p Redis replicas
+- more common use case: high availability using anti-affinity -> pods are groupped in cloud zones together to increase the availability
+
+### Pod topology spread
+
+- distribute pods using `topologySpreadConstraints`
+- spread pod to pools based on label & topologyKey
+- newer alternative of the pod affinity
+
+## Cost optimization
+
+- what is the correct cluster size?
+- kubecost
+
+## Managing the cloud infrastructure with K8s
+
+- crossplane - provision/configure/delete the cloud infrastructure from Kubernetes
+- create Helm charts to control the cloud infrastructure
+- Works with Google Cloud, AWS, Azure
+- note: when a deployment is deleted, the cloud resources are deleted too
