@@ -21,7 +21,7 @@ import feign.FeignException.FeignClientException;
 /**
  * Generic exception handler for <code>RestController</code>.
  * 
- * @author timpamungkas
+ * @author npantelic
  *
  */
 @RestControllerAdvice

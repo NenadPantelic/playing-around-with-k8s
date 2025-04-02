@@ -11,7 +11,7 @@ import lombok.NoArgsConstructor;
 /**
  * Pagination wrapper
  * 
- * @author timpamungkas
+ * @author npantelic
  *
  * @param <T> data type
  */

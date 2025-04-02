@@ -1,14 +1,14 @@
 # Build command
-# Adjust docker registry path (timpamungkas/...) into (your-docker-username/...)
+# Adjust docker registry path (npantelic/...) into (your-docker-username/...)
 #
 # 1. [Linux/Mac] : ./gradlew clean bootJar 
 #    [Windows]   : .\gradlew clean bootJar
 # 2. docker build --tag devops-yellow:1.0.1 . 
 # 3. docker login (optional)
-# 4. docker tag devops-yellow:1.0.1 timpamungkas/devops-yellow:1.0.1
-# 5. docker push timpamungkas/devops-yellow:1.0.1
+# 4. docker tag devops-yellow:1.0.1 npantelic/devops-yellow:1.0.1
+# 5. docker push npantelic/devops-yellow:1.0.1
 
-# .\gradlew clean bootJar && docker build --tag devops-yellow:1.0.1 . && docker tag devops-yellow:1.0.1 timpamungkas/devops-yellow:1.0.1 && docker push timpamungkas/devops-yellow:1.0.1
+# .\gradlew clean bootJar && docker build --tag devops-yellow:1.0.1 . && docker tag devops-yellow:1.0.1 npantelic/devops-yellow:1.0.1 && docker push npantelic/devops-yellow:1.0.1
 
 # Start with a base image containing Java runtime
 FROM amazoncorretto:17

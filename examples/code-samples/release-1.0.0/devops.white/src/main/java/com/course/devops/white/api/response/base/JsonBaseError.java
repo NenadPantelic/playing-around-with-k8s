@@ -10,7 +10,7 @@ import lombok.NoArgsConstructor;
  * Wrapper class for JSON element on response body, section
  * <code>header.errors</code>.
  * 
- * @author timpamungkas
+ * @author npantelic
  *
  */
 @Data

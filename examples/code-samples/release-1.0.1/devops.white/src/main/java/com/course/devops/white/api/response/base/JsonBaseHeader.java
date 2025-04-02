@@ -12,7 +12,7 @@ import lombok.NoArgsConstructor;
 /**
  * Wrapper class for JSON element on response body, section <code>header</code>.
  * 
- * @author timpamungkas
+ * @author npantelic
  *
  */
 @Data

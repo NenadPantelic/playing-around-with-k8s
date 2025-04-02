@@ -13,7 +13,7 @@ import lombok.NoArgsConstructor;
  * Wrapper class for JSON element on response body. Use your own class as
  * generic type replacement.
  * 
- * @author timpamungkas
+ * @author npantelic
  *
  */
 @Data
